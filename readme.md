@@ -3,7 +3,12 @@ This is the code for the ICLR 2023 Submission, 'Actionable Neural Representation
 Included in the code are:
 
 1. 6 files that perform optimisation in finite periodic of very large periodic spaces of 1, 2, or 3 dimensions
-Line, Circle, Torus, Plane, Volume, PeriodicVolume.py
+    1. Line.py
+    2. Circle.py
+    3. Torus.py
+    4. Plane.py
+    5. Volume.py
+    6. PeriodicVolume.py
 These should just run and output saved lists of the relevant parameters which can be used for plotting
 
 2. A folder which acts as a module, NRT_functions (NRT = Neural Representation Theory), which contains three files
