@@ -7,9 +7,9 @@ Line, Circle, Torus, Plane, Volume, PeriodicVolume.py
 These should just run and output saved lists of the relevant parameters which can be used for plotting
 
 2. A folder which acts as a module, NRT_functions (NRT = Neural Representation Theory), which contains three files
-  1. helper_functions.py - just some helpful functions
-  2. losses.py - the losses used
-  3. plotter.py - some helpful plotting functions
+    1. helper_functions.py - just some helpful functions
+    2. losses.py - the losses used
+    3. plotter.py - some helpful plotting functions
 
 3. A jupyter notebook that lets you plot the output of a simulation
 Results.ipynb
