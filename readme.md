@@ -15,8 +15,7 @@ Included in the code are:
     2. losses.py - the losses used
     3. plotter.py - some helpful plotting functions
 
-3. A jupyter notebook that lets you plot the output of a simulation
-Results.ipynb
+3. A jupyter notebook that lets you plot the output of a simulation - Plotter.ipynb
 
 The simulation runs are automatically saved in a file system organised by data ("YYMMDD") and time ("HHMMSS"). The plotter uses these to reload the data and plot the learnt representations
 
