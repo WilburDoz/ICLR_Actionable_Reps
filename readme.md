@@ -18,6 +18,7 @@ Included in the code are:
 3. A jupyter notebook that lets you plot the output of a simulation
 Results.ipynb
 
+The simulation runs are automatically saved in a file system organised by data ("YYMMDD") and time ("HHMMSS"). The plotter uses these to reload the data and plot the learnt representations
 
 Required packages:
 1. Jax
