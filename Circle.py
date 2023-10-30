@@ -11,7 +11,7 @@ from NRT_functions import losses
 
 ##### Set a load of parameters ######
 
-T = 50000                  # How many gradient steps
+T = 50000                   # How many gradient steps
 D = 21                      # How many neurons
 K = 5                       # How many repeats to run at once
 N_rand = 150                # How many random angles, to use for separation loss
@@ -19,7 +19,7 @@ N_pos = 450                 # How many angles to use for positivity
 resample_iters = 10         # How often to resample random points
 
 # Set of parameters for the positivity geco
-lambda_pos_init = 10         # Good for kern 0.1 # Good for euc 1 # Initial positivity loss weighting
+lambda_pos_init = 1         # Good for kern 0.1 # Good for euc 1 # Initial positivity loss weighting
 k_p = -9                    # Positivity target
 alpha_p = 0.9               # Smoothing of positivity dynamics
 gamma_p = 0.0001           # Proportionality constant
@@ -44,7 +44,7 @@ parameters = {"D": D, "T": T, "K": K, "N_rand": N_rand, "N_pos": N_pos, "resampl
 # 1: all the harmonics of up to (D-1)/2 of some base freq
 # 2: some random set of (D-1)/2 frequencies
 # 3: all the harmonics at a base frequency that increases slowly
-om_init_scheme = 1
+om_init_scheme = 0
 if om_init_scheme == 0:
     M = 100                     # Number of frequencies
     N_shift = 3                 # Number of shifts to check in equi loss
@@ -161,7 +161,7 @@ for counter in range(K):
         om = (counter + 1)*om_harm
 
     if equi_flag:
-        Losses = np.zeros([4, int(T / save_iters)])   # Holder for losses, total, sep, and equi
+        Losses = np.zeros([4, int(T / save_iters)+1])   # Holder for losses, total, sep, and equi
         min_L = np.zeros([5])  # Step, Loss, Loss_Sep, and Loss_Equi at min Loss
         key, subkey2 = random.split(key)
         B = random.normal(subkey2,[2*M+1,D])
@@ -179,6 +179,8 @@ for counter in range(K):
     L3 = 0                              # Same for the equivariance
     lambda_pos = lambda_pos_init        # And the positivity
     save_counter = 0
+
+    Losses[0,:] = np.infty
 
     for step in range(T):
         if step%resample_iters == 0:
@@ -264,22 +266,24 @@ for counter in range(K):
                 Losses[3, save_counter] = L3_Here
             Losses[1, save_counter] = L1
             Losses[2, save_counter] = L2_Here
+
+            # Potentially save the best results
+            if Losses[0, save_counter] < min_L[1] and L2_Here <= 0:
+                if equi_flag and L3_Here < 0:
+                    min_L = [save_counter, Losses[0, save_counter], Losses[1, save_counter], Losses[2, save_counter],
+                             Losses[3, save_counter]]
+                    B_best = B
+                else:
+                    min_L = [save_counter, Losses[0, save_counter], Losses[1, save_counter], Losses[2, save_counter]]
+                W_best = W
+
             save_counter = save_counter + 1
 
         if step%print_iters == 0:
             if equi_flag:
-                print(f'Iteration: {step}, Loss: {Losses[1, save_counter]:.5f}\t Sep: {L1:.5f}\t Equ: {L3_Here:.5f}\t L Eq: {lambda_equi:.5f}\t Pos: {L2_Here:.5f}\t L P: {lambda_pos:.5f}')
+                print(f'Iteration: {step}, Loss: {Losses[0, save_counter-1]:.5f}\t Sep: {L1:.5f}\t Equ: {L3_Here:.5f}\t L Eq: {lambda_equi:.5f}\t Pos: {L2_Here:.5f}\t L P: {lambda_pos:.5f}')
             else:
-                print(f'Iteration: {step}, Loss: {Losses[1, save_counter]:.5f}\t Sep: {L1:.5f}\t Pos: {L2_Here:.5f}\t L P: {lambda_pos:.5f}')
-
-        # Potentially save the best results
-        if Losses[1, save_counter] < min_L[1] and L2_Here <= 0:
-            if equi_flag and L3_Here < 0:
-                min_L = [save_counter, Losses[0, save_counter], Losses[1, save_counter], Losses[2, save_counter], Losses[3,save_counter]]
-                B_best = B
-            else:
-                min_L = [save_counter, Losses[0, save_counter], Losses[1, save_counter], Losses[2, save_counter]]
-            W_best = W
+                print(f'Iteration: {step}, Loss: {Losses[0, save_counter-1]:.5f}\t Sep: {L1:.5f}\t Pos: {L2_Here:.5f}\t L P: {lambda_pos:.5f}')
 
         # Take parameter step
         W = W - epsilon*means_debiased_W/(np.sqrt(sec_moms_debiased_W + eta))
@@ -300,4 +304,4 @@ for counter in range(K):
         helper_functions.save_obj(B_init, f"B_init_{counter}", savepath)
 
     # And print to say iteration done
-    print(f"\nDONE ITERATION {counter}: Min_Loss = {min_L[1]:.5f}\n")
+    print(f"\nDONE ITERATION {step}: Min_Loss = {min_L[1]:.5f}\n")

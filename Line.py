@@ -11,7 +11,7 @@ from NRT_functions import losses
 
 ##### Set a load of parameters ######
 
-T = 75000                   # How many gradient steps
+T = 100000                   # How many gradient steps
 D = 25                      # How many neurons
 K = 5                       # How many repeats to run at once
 N_rand = 150                # How many random angles, to use for separation loss
@@ -24,7 +24,7 @@ resample_iters = 5          # How often to resample random points
 lambda_pos_init = 5      # 15 for euc, 5 for kern, 150 for euc_A (maybe 0.5 after N), 0.1 for kern_A  # Initial positivity loss weighting
 k_p = -9                    # Positivity target
 alpha_p = 0.9               # Smoothing of positivity dynamics
-gamma_p = 0.00025             # Proportionality constant
+gamma_p = 0.0001             # Proportionality constant
 
 # Norm GECO parameters
 lambda_norm_init = 0.05      # Initial norm loss weighting
@@ -225,6 +225,10 @@ for counter in range(K):
     #    om_hist = np.zeros([om.shape[:], int(T / save_iters)])
 
     for step in range(T):
+        if step == 75000:
+            Shift_std = 5
+            parameters.update({"Shift_std_NEW": Shift_std, "Shift_std_TIME": step})
+
         if step % resample_iters == 0:
             # Create the angles, shifts, irreps, and transforms
             if sampling_choice == 0:

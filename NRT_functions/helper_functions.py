@@ -4,7 +4,41 @@ from datetime import datetime
 import jax.numpy as jnp
 import numpy as np
 from pathlib import Path
+from scipy.special import sph_harm as sph_harm
 import pickle
+
+# A function to setup a save file
+def setup_save_file(parameters):
+    today = datetime.strftime(datetime.now(), '%y%m%d')
+    now = datetime.strftime(datetime.now(), '%H%M%S')
+    # Make sure folder is there
+    if not os.path.isdir(f"./data/"):
+        os.mkdir(f"./data/")
+    if not os.path.isdir(f"data/{today}/"):
+        os.mkdir(f"data/{today}/")
+    # Now make a folder in there for this run
+    savepath = f"data/{today}/{now}/"
+    if not os.path.isdir(f"data/{today}/{now}"):
+        os.mkdir(f"data/{today}/{now}")
+
+    save_obj(parameters, "parameters", savepath)
+    return savepath
+
+# A function to implement an ADAM step
+def adam_step(grad, m, v, t, epsilon, beta1, beta2, eta):
+    m = beta1*m + (1-beta1)*grad
+    v = beta2*v + (1-beta2)*jnp.power(grad, 2)
+    m_hat = m/(1-jnp.power(beta1, t))
+    v_hat = v/(1-jnp.power(beta2, t))
+    return epsilon*m_hat/(jnp.sqrt(v_hat) + eta), m, v
+
+def save_obj(obj, name, savepath):
+    with open(savepath + name + '.pkl', 'wb') as f:
+        pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
+
+def load_obj(name, filepath):
+    with open(filepath + name + '.pkl', 'rb') as f:
+        return pickle.load(f)
 
 # Function to save weights
 def save_weights(W, counter):
@@ -44,6 +78,22 @@ def init_irreps_2D(om, phi):
     I = I.at[2::2,:].set(sin_stack)
     return I
 
+def init_irreps_AB(om, theta_A, theta_B, phi):
+    cos_stack_A = jnp.cos(theta_A[None, :]*om[:, None])
+    sin_stack_A = jnp.sin(theta_A[None, :]*om[:, None])
+    cos_stack_B = jnp.cos(theta_B[None, :]*om[:, None])
+    sin_stack_B = jnp.sin(theta_B[None, :]*om[:, None])
+    I = jnp.ones([8*om.size + 1, theta_A.size])
+    I = I.at[1::8, :].set(cos_stack_A)
+    I = I.at[2::8, :].set(sin_stack_A)
+    I = I.at[3::8, :].set(cos_stack_B)
+    I = I.at[4::8, :].set(sin_stack_B)
+    I = I.at[5::8, :].set(cos_stack_A*jnp.power(-1, phi)[None, :])
+    I = I.at[6::8, :].set(cos_stack_A*jnp.power(-1, phi)[None, :])
+    I = I.at[7::8, :].set(sin_stack_A*jnp.power(-1, phi)[None, :])
+    I = I.at[8::8, :].set(sin_stack_A*jnp.power(-1, phi)[None, :])
+    return I
+
 # Finds just the set of transformations matrices for the list of delta_phi angles
 def irrep_transforms_1D(om, delta_phi):
     N = delta_phi.size
@@ -77,14 +127,6 @@ def normalise_weights(W):
     norms = jnp.linalg.norm(W,axis=1)
     W = W/norms[:,None]
     return W
-
-def save_obj(obj, name, savepath):
-    with open(savepath + name + '.pkl', 'wb') as f:
-        pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
-
-def load_obj(name, filepath):
-    with open(filepath + name + '.pkl', 'rb') as f:
-        return pickle.load(f)
 
 def calc_chi_circ(phi, sigma_theta, f):
     phi = jnp.asarray(phi)
@@ -129,6 +171,16 @@ def calc_chi_plane_exp(phi, sigma_theta, f):
     dist = jnp.sum(jnp.power(phi[:,None,:] - phi[None,:,:],2), axis = 2)
     Chi = jnp.exp(dist/(2*jnp.power(sigma_theta,2)))
     return Chi
+
+def calc_chi_sphere(phi, sigma_theta):
+    phi = jnp.asarray(phi)
+    N_rand = phi.shape[1]
+    delta_lat = phi[1,:,None] - phi[1,None,:]
+    distance = jnp.arccos(jnp.sin(phi[0,:,None])*jnp.sin(phi[0,None,:]) + jnp.multiply(jnp.cos(phi[0,:,None])*jnp.cos(phi[0,None,:]), jnp.cos(delta_lat)))
+    for ind in range(N_rand):
+        distance = distance.at[ind,ind].set(0)
+    chi = 1 - jnp.exp(-jnp.power(distance, 2)/(2*jnp.power(sigma_theta,2)))
+    return chi
 
 # This one is different, selects frequencies from half the plane
 def freq_selector(M):
@@ -295,3 +347,172 @@ def normalising_matrix(om):
     Q = Q.at[1:M+1,1:M+1].set(c2)
     Q = Q.at[M+1:,M+1:].set(s2)
     return Q
+
+def convert_angles(xyz):
+    ptsnew = np.zeros([2, np.size(xyz, 1)])
+    xy = xyz[0,:]**2 + xyz[1,:]**2
+    #ptsnew[0,:] = np.arctan2(np.sqrt(xy), xyz[2,:]) # for elevation angle defined from Z-axis down
+    ptsnew[0,:] = np.arctan2(xyz[2,:], np.sqrt(xy)) # for elevation angle defined from XY-plane up
+    ptsnew[1,:] = np.arctan2(xyz[1,:], xyz[0,:])
+    return ptsnew
+
+def initialise_irreps_sphere(ell_max, phi):
+    N = phi.shape[1]
+    I_C = Create_CSHs(ell_max, phi)
+    I = Complex_to_Real_SHs(I_C, ell_max)
+    return I
+
+def Complex_to_Real_SHs(J_Comp, ell_max):
+    J_Real = jnp.zeros(J_Comp.shape)
+    l_ind = 0
+    for l in range(ell_max+1):
+        for m in range(-l, l+1):
+            if m < 0:
+                J_Real = J_Real.at[l_ind+l+m,:].set(1j/np.sqrt(2)*(J_Comp[l_ind+l+m,:] - (-1)**m*J_Comp[l_ind+l-m,:]))
+            elif m == 0:
+                J_Real = J_Real.at[l_ind+l,:].set(J_Comp[l_ind+l,:])
+            else:
+                J_Real = J_Real.at[l_ind+l+m,:].set(1/np.sqrt(2)*(J_Comp[l_ind+l-m,:] + (-1)**m*J_Comp[l_ind+l+m,:]))
+        l_ind = l_ind + 2*l + 1
+    return J_Real
+def Real_to_Complex_SHs(J_Real, ell_max):
+    J_Comp = jnp.zeros(J_Real.shape, dtype=complex)
+    l_ind = 0
+    for l in range(ell_max + 1):
+        for m in range(-l, l + 1):
+            if m < 0:
+                J_Comp = J_Comp.at[l_ind + l + m, :].set(
+                    1 / np.sqrt(2) * (J_Real[l_ind + l - m, :] - 1j * J_Real[l_ind + l + m, :]))
+            elif m == 0:
+                J_Comp = J_Comp.at[l_ind + l, :].set(J_Real[l_ind + l, :])
+            else:
+                J_Comp = J_Comp.at[l_ind + l + m, :].set(
+                    (-1) ** m / np.sqrt(2) * (J_Real[l_ind + l + m, :] + 1j * J_Real[l_ind + l - m, :]))
+        l_ind = l_ind + 2 * l + 1
+    return J_Comp
+
+
+def Create_CSHs(ell_max, angles):
+    number_of_modes = np.power(ell_max + 1, 2)
+    number_of_angles = angles.shape[1]
+
+    J_Comp = np.zeros([number_of_modes, number_of_angles], dtype=complex)
+    l_ind = 0
+    for l in range(ell_max + 1):
+        for m in range(-l, l + 1):
+            #            print(m, l, m+l+l_ind)
+            J_Comp[m + l + l_ind, :] = sph_harm(m, l, angles[1, :] + np.pi, angles[0, :] + np.pi / 2)
+            # J_Comp[m + l + l_ind,:] = sph_harm(m, l, angles[1,:]+np.pi, angles[0,:])
+        l_ind = l_ind + 2 * l + 1
+    return J_Comp
+
+
+def U(l, m, n, R_1, R_lm1):
+    return P(0, l, m, n, R_1, R_lm1)
+
+
+def V(l, m, n, R_1, R_lm1):
+    if (m == 0):
+        p0 = P(1, l, 1, n, R_1, R_lm1)
+        p1 = P(-1, l, -1, n, R_1, R_lm1)
+        ret = p0 + p1
+    else:
+        if (m > 0):
+            d = (m == 1)
+            p0 = P(1, l, m - 1, n, R_1, R_lm1)
+            p1 = P(-1, l, -m + 1, n, R_1, R_lm1)
+            ret = p0 * np.sqrt(1 + d) - p1 * (1 - d)
+        else:
+            d = (m == -1)
+            p0 = P(1, l, m + 1, n, R_1, R_lm1)
+            p1 = P(-1, l, -m - 1, n, R_1, R_lm1)
+            ret = p0 * (1 - d) + p1 * np.sqrt(1 + d)
+    return ret
+
+
+def Wf(l, m, n, R_1, R_lm1):
+    if (m == 0):
+        error('should not be called')
+    else:
+        if (m > 0):
+            p0 = P(1, l, m + 1, n, R_1, R_lm1)
+            p1 = P(-1, l, -m - 1, n, R_1, R_lm1)
+            ret = p0 + p1
+        else:
+            p0 = P(1, l, m - 1, n, R_1, R_lm1)
+            p1 = P(-1, l, -m + 1, n, R_1, R_lm1)
+            ret = p0 - p1
+    return ret
+
+
+def P(i, l, a, b, R_1, R_lm1):
+    ri1 = R_1[i + 1, 1 + 1]
+    rim1 = R_1[i + 1, -1 + 1]
+    ri0 = R_1[i + 1, 0 + 1]
+
+    if (b == -l):
+        ret = ri1 * R_lm1[a + l - 1, 0] + rim1 * R_lm1[a + l - 1, 2 * l - 2]
+    else:
+        if (b == l):
+            ret = ri1 * R_lm1[a + l - 1, 2 * l - 2] - rim1 * R_lm1[a + l - 1, 0]
+        else:
+            ret = ri0 * R_lm1[a + l - 1, b + l - 1]
+    return ret
+
+
+def Real_Rotation(rotation, ell_max):
+    R = np.zeros([(ell_max + 1) ** 2, (ell_max + 1) ** 2])
+
+    # Trivial rep
+    R[0, 0] = 1
+
+    # First band, directly relates to rotation matrix
+    R[1, 1] = rotation[1, 1]
+    R[1, 2] = rotation[1, 2]
+    R[1, 3] = rotation[1, 0]
+    R[2, 1] = rotation[2, 1]
+    R[2, 2] = rotation[2, 2]
+    R[2, 3] = rotation[2, 0]
+    R[3, 1] = rotation[0, 1]
+    R[3, 2] = rotation[0, 2]
+    R[3, 3] = rotation[0, 0]
+
+    R_1 = R[1:4, 1:4]
+    R_lm1 = R_1
+
+    # For each subsequent band we progress recursively
+    band_idx = 4
+    for l in range(2, ell_max + 1):
+        R_l = np.zeros([2 * l + 1, 2 * l + 1])
+        for m in range(-l, l + 1):
+            for n in range(-l, l + 1):
+
+                d = (m == 0)
+                if np.abs(n) == l:
+                    denom = 2 * l * (2 * l - 1)
+                else:
+                    denom = l * l - n * n
+
+                u = np.sqrt((l * l - m * m) / denom)
+                v = np.sqrt((1 + d) * (l + np.abs(m) - 1) * (l + np.abs(m)) / denom) * (1 - 2 * d) * 0.5
+                w = np.sqrt((l - np.abs(m) - 1) * (l - np.abs(m)) / denom) * (1 - d) * (-0.5)
+
+                if u != 0:
+                    u = u * U(l, m, n, R_1, R_lm1)
+                if v != 0:
+                    v = v * V(l, m, n, R_1, R_lm1)
+                if w != 0:
+                    w = w * Wf(l, m, n, R_1, R_lm1)
+
+                R_l[m + l, n + l] = u + v + w;
+        R[band_idx:band_idx + 2 * l + 1, band_idx:band_idx + 2 * l + 1] = R_l;
+        R_lm1 = R_l;
+        band_idx = band_idx + 2 * l + 1;
+    return R
+
+
+def irrep_transforms_sphere(ell_max, rand_rotations):
+    R = np.zeros([rand_rotations.shape[0], (ell_max + 1) ** 2, (ell_max + 1) ** 2])
+    for rotation in range(rand_rotations.shape[0]):
+        R[rotation, :, :] = Real_Rotation(rand_rotations[rotation, :, :], ell_max)
+    return R

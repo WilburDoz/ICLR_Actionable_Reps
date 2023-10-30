@@ -90,6 +90,19 @@ def equi_circ_smart_B(W, B, I_base, I_shift, G_I):
     L = jnp.sum(jnp.power(V_tilde_reshape - V_shift,2))/(V_tilde_reshape.shape[1])
     return L
 
+def equi_smart(W, I_base, I_shift, G_I):
+    # Set up the normalised version of the weight matrix
+    norms = jnp.linalg.norm(W,axis=1)
+    W = W/norms[:,None]
+
+    V_base = jnp.matmul(W,I_base)
+    V_shift = jnp.matmul(W,I_shift)
+    G = jnp.einsum('ij,kjp->kip', W, jnp.einsum('ikl,lp->ikp', G_I, jnp.linalg.pinv(W)))
+    V_tilde = jnp.einsum('kij,jl->ilk',G, V_base)
+    V_tilde_reshape = jnp.reshape(V_tilde, [V_tilde.shape[0], V_tilde.shape[1]*V_tilde.shape[2]],order='F')
+    L = jnp.sum(jnp.power(V_tilde_reshape - V_shift,2))/(V_tilde_reshape.shape[1])
+    return L
+
 ### LOSSES FOR LINE 3 different separation, positivity, and a norm one
 
 def pos_line(W, om, phi, N_shift):
@@ -291,4 +304,7 @@ def norm_plane(W, om, phi_room, phi_other):
     norms = jnp.sum(jnp.reshape(jnp.power(g_other, 2), [D, N_shift, N]), axis = 2)
     return jnp.linalg.norm(norms - 1)/(D*N_shift)
 
+# Set of losses for the sphere
 
+def sep_sphere_Euc(W, I):
+    I = helper_functions.init_irreps_sphere()
